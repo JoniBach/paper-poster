@@ -192,6 +192,41 @@ const convertToSVG = (imagePath, colorHex) => {
   });
 };
 
+// Merge Two SVG Files into One
+const mergeSVGs = async (svgPath1, svgPath2, outputPath) => {
+  try {
+    const svg1 = fs.readFileSync(svgPath1, "utf-8");
+    const svg2 = fs.readFileSync(svgPath2, "utf-8");
+
+    // Function to extract inner SVG content
+    const getInnerSVG = (svgContent) => {
+      const start = svgContent.indexOf(">") + 1;
+      const end = svgContent.lastIndexOf("</svg>");
+      return svgContent.substring(start, end);
+    };
+
+    const inner1 = getInnerSVG(svg1);
+    const inner2 = getInnerSVG(svg2);
+
+    // Extract the opening <svg ...> tag from the first SVG
+    const svgTagMatch = svg1.match(/<svg[^>]*>/);
+    const svgTag = svgTagMatch
+      ? svgTagMatch[0]
+      : '<svg xmlns="http://www.w3.org/2000/svg">';
+
+    // Combine the inner content
+    const mergedContent = `${svgTag}\n${inner1}\n${inner2}\n</svg>`;
+
+    fs.writeFileSync(outputPath, mergedContent);
+    console.log(`Merged SVG created at: ${outputPath}`);
+  } catch (error) {
+    console.error("Error merging SVGs:", error);
+  }
+};
+
+// Capitalize Function
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
 // Main Workflow Function
 const main = async () => {
   try {
@@ -239,10 +274,22 @@ const main = async () => {
 
     // Convert processed images to SVG
     const colors = ["red", "black"];
+    const svgPaths = [];
+
     for (const color of colors) {
       const processedImagePath = path.join(outputDir, `${color}.png`);
       const svgColor = CONFIG.SVG_COLORS[color];
-      await convertToSVG(processedImagePath, svgColor);
+      const svgPath = await convertToSVG(processedImagePath, svgColor);
+      svgPaths.push(svgPath);
+    }
+
+    // Merge the SVGs into a single merged.svg
+    if (svgPaths.length === 2) {
+      const [svg1, svg2] = svgPaths;
+      const mergedSVGPath = path.join(outputDir, "merged.svg");
+      await mergeSVGs(svg1, svg2, mergedSVGPath);
+    } else {
+      console.warn("Skipping SVG merging: Expected 2 SVG paths.");
     }
   } catch (error) {
     console.error("Error:", error);
