@@ -15,6 +15,7 @@
     "dotenv": "^16.4.7",
     "jimp": "^1.6.0",
     "node-schedule": "^2.1.1",
+    "node-vibrant": "^4.0.0",
     "openai": "^4.77.3",
     "potrace": "^2.1.8"
   }
