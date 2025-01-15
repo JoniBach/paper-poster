@@ -8,7 +8,11 @@
   let colorSvgs = []; // Array of color-specific SVGs
   let imageFile = null; // File input
   let svgImage = null; // SVG image
-
+  let greyscaleImage = null; // Greyscale image URL
+  let greyscalePalette = []; // Extracted greyscale palette
+  let greyscaleImages = []; // Array of separated greyscale image URLs
+  let separatedGreyscaleSvgs = []; // Array of separated greyscale SVGs
+  let mergedGreyscaleSvg = null; // Merged greyscale SVG
   const processImage = async () => {
     if (!imageFile) return;
 
@@ -29,19 +33,25 @@
       const data = await response.json();
       originalImage = URL.createObjectURL(imageFile); // Set original image
       processedImage = data.processedImage; // Set processed image (Base64)
-      extractedColors = data.colorPalletHex// Convert color palette to RGB and HEX format
+      extractedColors = data.colorPalletHex; // Set extracted colors
 
-      console.log(extractedColors)
-      colorImages = data.separatedColorImages
+      console.log(extractedColors);
+      colorImages = data.separatedColorImages;
       colorSvgs = data.separatedColorSvgs;
       svgImage = data.mergedSvg;
-
-      console.log(data)
+      greyscaleImage = data.greyscaleImage; // Set greyscale image (Base64)
+      greyscalePalette = data.greyscalePalette; // Set greyscale palette
+      greyscaleImages = data.separatedGreyscaleImages; // Set separated greyscale images
+      separatedGreyscaleSvgs = data.seperatedGreyscaleSvgs; // Set separated greyscale SVGs
+      mergedGreyscaleSvg = data.mergedGreyscaleSvg; // Set merged greyscale SVG
+      console.log(data);
     } catch (error) {
       console.error("Error processing image:", error.message);
       alert("An error occurred while processing the image.");
     }
   };
+
+
 </script>
 
 
@@ -51,8 +61,6 @@
 <!-- File input -->
 <input type="file" accept="image/*" on:change={(e) => (imageFile = e.target.files[0])} />
 <button on:click={processImage}>Process Image</button>
-
-<!-- Images container -->
 <div class="images">
   <!-- Original image -->
   {#if originalImage}
@@ -61,6 +69,11 @@
       <img src={originalImage} alt="Original" />
     </div>
   {/if}
+    </div>
+    <!-- Images container -->
+<div class="images">
+  <!-- Original image -->
+ 
 
   <!-- Processed image -->
   {#if processedImage}
@@ -69,6 +82,9 @@
       <img src={processedImage} alt="Processed" />
     </div>
   {/if}
+
+
+
 <!-- SVG image -->
   {#if svgImage}
   <div>
@@ -79,6 +95,22 @@
   </div>
   </div>
 {/if}
+  <!-- Greyscale image -->
+  {#if greyscaleImage}
+    <div>
+      <h2>Greyscale Image</h2>
+      <img src={greyscaleImage} alt="Greyscale" />
+    </div>
+  {/if}
+  <!-- Merged greyscale SVG -->
+  {#if mergedGreyscaleSvg}
+    <div>
+      <h2>Merged Greyscale SVG</h2>
+      <div class='svg'>
+        {@html mergedGreyscaleSvg}
+      </div>
+    </div>
+  {/if}
 </div>
 
   <!-- Processed image -->
@@ -95,6 +127,23 @@
           style="background-color: {color}"
         ></div>
         <span>{color}</span>
+      </div>
+    {/each}
+  </div>
+{/if}
+
+
+<!-- Greyscale palette -->
+{#if greyscalePalette.length > 0}
+  <h2>Greyscale Palette</h2>
+  <div>
+    {#each greyscalePalette as hex}
+      <div class="color-box">
+        <div
+          class="color-preview"
+          style="background-color: {hex}"
+        ></div>
+        <span>{hex}</span>
       </div>
     {/each}
   </div>
@@ -123,6 +172,27 @@
   </div>
 {/if}
 
+<!-- Separated greyscale images -->
+{#if greyscaleImages.length > 0}
+  <h2>Separated Greyscale Images</h2>
+  <div class="greyscale-images">
+    {#each greyscaleImages as imgSrc}
+      <img src={imgSrc} alt="Greyscale-Specific" />
+    {/each}
+  </div>
+{/if}
+
+<!-- Separated greyscale SVGs -->
+{#if separatedGreyscaleSvgs.length > 0}
+  <h2>Separated Greyscale SVGs</h2>
+  <div class="greyscale-svgs">
+    {#each separatedGreyscaleSvgs as svgContent}
+      <div>
+        {@html svgContent}
+      </div>
+    {/each}
+  </div>
+{/if}
 
 <style>
   .color-box {
@@ -200,6 +270,35 @@
     border-radius: 4px;
   }
   .color-svgs svg {
+    max-width: 100%;
+    max-height: 100%;
+  }
+  .greyscale-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+  }
+  .greyscale-images img {
+    max-width: 100px;
+    height: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+  .greyscale-svgs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+  }
+  .greyscale-svgs div {
+    width: 100px;
+    height: 100px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+  }
+  .greyscale-svgs svg {
     max-width: 100%;
     max-height: 100%;
   }

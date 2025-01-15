@@ -29,6 +29,27 @@ const processImage = (image, colorPalette) => {
 	return image;
 };
 
+// Function to create a greyscale image
+const createGreyscaleImage = async (image) => {
+	const greyscaleImage = image.clone().greyscale();
+	const greyscaleBuffer = await greyscaleImage.getBuffer('image/png');
+	return `data:image/png;base64,${greyscaleBuffer.toString('base64')}`;
+};
+
+// Function to extract greyscale palette
+const extractGreyscalePalette = (image) => {
+	const greyscalePalette = new Set();
+	image.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
+		const red = this.bitmap.data[idx];
+		const green = this.bitmap.data[idx + 1];
+		const blue = this.bitmap.data[idx + 2];
+		const grey = Math.round(0.3 * red + 0.59 * green + 0.11 * blue);
+		const greyHex = rgbToHex([grey, grey, grey]);
+		greyscalePalette.add(greyHex);
+	});
+	return Array.from(greyscalePalette);
+};
+
 // Function to separate colors in the image
 const separateColors = async (image, colorPalette) => {
 	return Promise.all(
@@ -53,6 +74,50 @@ const separateColors = async (image, colorPalette) => {
 	);
 };
 
+const TOLERANCE = 5;
+
+function greyHexToNumber(hexString) {
+	// Convert #RRGGBB to a single grayscale value (0–255).
+	const r = parseInt(hexString.slice(1, 3), 16);
+	const g = parseInt(hexString.slice(3, 5), 16);
+	const b = parseInt(hexString.slice(5, 7), 16);
+
+	// same grayscale formula you use for your image
+	return Math.round(0.3 * r + 0.59 * g + 0.11 * b);
+}
+
+const separateGreyscaleColors = async (image, greyscalePalette) => {
+	return Promise.all(
+		greyscalePalette.map(async (greyHex) => {
+			const targetGrey = greyHexToNumber(greyHex);
+			const newImage = image
+				.clone()
+				.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
+					const red = this.bitmap.data[idx + 0];
+					const green = this.bitmap.data[idx + 1];
+					const blue = this.bitmap.data[idx + 2];
+					const grey = Math.round(0.3 * red + 0.59 * green + 0.11 * blue);
+
+					// Check if pixel's grayscale is close to palette color.
+					if (Math.abs(grey - targetGrey) <= TOLERANCE) {
+						// Force the pixel to the *exact* grayscale.
+						// This ensures it's truly gray rather than color.
+						this.bitmap.data[idx + 0] = targetGrey;
+						this.bitmap.data[idx + 1] = targetGrey;
+						this.bitmap.data[idx + 2] = targetGrey;
+					} else {
+						// If it doesn't match within tolerance, set to white
+						this.bitmap.data[idx + 0] = 255;
+						this.bitmap.data[idx + 1] = 255;
+						this.bitmap.data[idx + 2] = 255;
+					}
+				});
+
+			const newBuffer = await newImage.getBuffer('image/png');
+			return `data:image/png;base64,${newBuffer.toString('base64')}`;
+		})
+	);
+};
 // Function to trace images and get SVGs
 const traceImagesToSvgs = async (separatedColorImages, colorPalletHex) => {
 	return Promise.all(
@@ -70,7 +135,6 @@ const traceImagesToSvgs = async (separatedColorImages, colorPalletHex) => {
 		})
 	);
 };
-
 // Function to merge SVGs
 const mergeSvgs = (svgs, width, height) => {
 	let minX = Infinity;
@@ -132,7 +196,7 @@ export const POST = async ({ request }) => {
 		const buffer = Buffer.from(await file.arrayBuffer());
 		const image = await Jimp.read(buffer);
 
-		const palette = await Vibrant.from(buffer).getPalette();
+		const palette = await Vibrant.from(buffer).quality(2).getPalette();
 		if (!palette) {
 			return json({ error: 'Unable to extract color palette' }, { status: 500 });
 		}
@@ -155,13 +219,28 @@ export const POST = async ({ request }) => {
 		const separatedColorSvgs = await traceImagesToSvgs(separatedColorImages, colorPalletHex);
 		const mergedSvg = mergeSvgs(separatedColorSvgs, 500, 500);
 
+		const greyscaleImageBase64 = await createGreyscaleImage(image);
+		const greyscalePalette = extractGreyscalePalette(
+			await Jimp.read(Buffer.from(greyscaleImageBase64.split(',')[1], 'base64'))
+		);
+		const separatedGreyscaleImages = await separateGreyscaleColors(image, greyscalePalette);
+		const seperatedGreyscaleSvgs = await traceImagesToSvgs(
+			separatedGreyscaleImages,
+			greyscalePalette
+		);
+		const mergedGreyscaleSvg = mergeSvgs(seperatedGreyscaleSvgs, 500, 500);
 		return json({
 			processedImage: processedImageBase64,
 			colorPalette,
 			separatedColorImages,
 			separatedColorSvgs,
 			colorPalletHex,
-			mergedSvg
+			mergedSvg,
+			greyscaleImage: greyscaleImageBase64,
+			greyscalePalette,
+			separatedGreyscaleImages,
+			seperatedGreyscaleSvgs,
+			mergedGreyscaleSvg
 		});
 	} catch (error) {
 		console.error('Error processing image:', error);
