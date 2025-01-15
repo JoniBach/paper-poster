@@ -4,7 +4,8 @@ import { Vibrant } from 'node-vibrant/node';
 import { trace } from 'potrace';
 
 // Utility functions
-const rgbToHex = (rgb) => '#' + rgb.map((x) => x.toString(16).padStart(2, '0')).join('');
+const rgbToHex = (rgb) =>
+	'#' + rgb.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
 const computeEuclideanDistance = (a, b) =>
 	Math.sqrt(a.reduce((acc, val, i) => acc + Math.pow(val - b[i], 2), 0));
 const findClosestColor = (color, palette) =>
