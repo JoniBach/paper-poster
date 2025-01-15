@@ -29,7 +29,9 @@
       const data = await response.json();
       originalImage = URL.createObjectURL(imageFile); // Set original image
       processedImage = data.processedImage; // Set processed image (Base64)
-      extractedColors = data.colorPalletHex
+      extractedColors = data.colorPalletHex// Convert color palette to RGB and HEX format
+
+      console.log(extractedColors)
       colorImages = data.separatedColorImages
       colorSvgs = data.separatedColorSvgs;
       svgImage = data.mergedSvg;
@@ -90,9 +92,9 @@
       <div class="color-box">
         <div
           class="color-preview"
-          style="background-color: {color.hex}"
+          style="background-color: {color}"
         ></div>
-        <span>{color.hex}</span>
+        <span>{color}</span>
       </div>
     {/each}
   </div>
