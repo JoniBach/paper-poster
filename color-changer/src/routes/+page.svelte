@@ -29,17 +29,12 @@
       const data = await response.json();
       originalImage = URL.createObjectURL(imageFile); // Set original image
       processedImage = data.processedImage; // Set processed image (Base64)
-      extractedColors = data.colorPalette.map((rgb) => {
-        const hex = `#${rgb.map((val) => val.toString(16).padStart(2, "0")).join("")}`;
-        return { rgb, hex };
-      }); // Convert color palette to RGB and HEX format
-
-      // Set color-shifted images
-      colorImages = await Promise.all(data.seperatedColorImages.map(async (base64) => base64));
-
-      // Set SVGs
-      colorSvgs = data.seperatedColorSvgs;
+      extractedColors = data.colorPalletHex
+      colorImages = data.separatedColorImages
+      colorSvgs = data.separatedColorSvgs;
       svgImage = data.mergedSvg;
+
+      console.log(data)
     } catch (error) {
       console.error("Error processing image:", error.message);
       alert("An error occurred while processing the image.");
