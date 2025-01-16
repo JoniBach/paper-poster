@@ -229,6 +229,20 @@ export const POST = async ({ request }) => {
 			greyscalePalette
 		);
 		const mergedGreyscaleSvg = mergeSvgs(seperatedGreyscaleSvgs, 500, 500);
+
+		const outlineSvgs = separatedColorSvgs.map((svg) => {
+			const outlineSvg = svg
+				.replace(/fill="[^"]*"/g, 'fill="none"')
+				.replace(/stroke="[^"]*"/g, 'stroke="black" stroke-width="1"');
+			return outlineSvg;
+		});
+
+		const mergedOutlineSvg = mergeSvgs(outlineSvgs, 500, 500);
+		const mergedGreyscaleOutlinedSvg = mergeSvgs(
+			[...seperatedGreyscaleSvgs, ...outlineSvgs],
+			500,
+			500
+		);
 		return json({
 			processedImage: processedImageBase64,
 			colorPalette,
@@ -240,7 +254,10 @@ export const POST = async ({ request }) => {
 			greyscalePalette,
 			separatedGreyscaleImages,
 			seperatedGreyscaleSvgs,
-			mergedGreyscaleSvg
+			mergedGreyscaleSvg,
+			outlineSvgs,
+			mergedOutlineSvg,
+			mergedGreyscaleOutlinedSvg
 		});
 	} catch (error) {
 		console.error('Error processing image:', error);

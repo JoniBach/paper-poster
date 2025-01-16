@@ -13,6 +13,9 @@
   let greyscaleImages = []; // Array of separated greyscale image URLs
   let separatedGreyscaleSvgs = []; // Array of separated greyscale SVGs
   let mergedGreyscaleSvg = null; // Merged greyscale SVG
+  let outlineSvgs = []; // Array of outline SVGs
+  let mergedOutlineSvg = null; // Merged outline SVG
+  let mergedGreyscaleOutlinedSvg = null; // Merged color line SVG
   const processImage = async () => {
     if (!imageFile) return;
 
@@ -44,6 +47,9 @@
       greyscaleImages = data.separatedGreyscaleImages; // Set separated greyscale images
       separatedGreyscaleSvgs = data.seperatedGreyscaleSvgs; // Set separated greyscale SVGs
       mergedGreyscaleSvg = data.mergedGreyscaleSvg; // Set merged greyscale SVG
+      outlineSvgs = data.outlineSvgs; // Set outline SVGs
+      mergedOutlineSvg = data.mergedOutlineSvg; // Set merged outline SVG
+      mergedGreyscaleOutlinedSvg = data.mergedGreyscaleOutlinedSvg; // Set merged color line SVG
       console.log(data);
     } catch (error) {
       console.error("Error processing image:", error.message);
@@ -108,6 +114,25 @@
       <h2>Merged Greyscale SVG</h2>
       <div class='svg'>
         {@html mergedGreyscaleSvg}
+      </div>
+    </div>
+  {/if}
+  <!-- Merged outline SVG -->
+  {#if mergedOutlineSvg}
+    <div>
+      <h2>Merged Outline SVG</h2>
+      <div class='svg'>
+        {@html mergedOutlineSvg}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Merged color line SVG -->
+  {#if mergedGreyscaleOutlinedSvg}
+    <div>
+      <h2>Merged greyscale outline SVG</h2>
+      <div class='svg'>
+        {@html mergedGreyscaleOutlinedSvg}
       </div>
     </div>
   {/if}
@@ -187,6 +212,18 @@
   <h2>Separated Greyscale SVGs</h2>
   <div class="greyscale-svgs">
     {#each separatedGreyscaleSvgs as svgContent}
+      <div>
+        {@html svgContent}
+      </div>
+    {/each}
+  </div>
+{/if}
+
+<!-- Outline SVGs -->
+{#if outlineSvgs.length > 0}
+  <h2>Outline SVGs</h2>
+  <div class="color-svgs">
+    {#each outlineSvgs as svgContent}
       <div>
         {@html svgContent}
       </div>
