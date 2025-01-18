@@ -119,12 +119,12 @@ const separateGreyscaleColors = async (image, greyscalePalette) => {
 	);
 };
 // Function to trace images and get SVGs
-const traceImagesToSvgs = async (separatedColorImages, colorPalletHex) => {
+const traceImagesToSvgs = async (separatedColorImages, colorPallet) => {
 	return Promise.all(
 		separatedColorImages.map((base64Image, i) => {
 			return new Promise((resolve, reject) => {
 				const imageBuffer = Buffer.from(base64Image.split(',')[1], 'base64');
-				trace(imageBuffer, { color: colorPalletHex[i] }, (error, svg) => {
+				trace(imageBuffer, { color: colorPallet[i] }, (error, svg) => {
 					if (error) {
 						reject(error);
 					} else {
@@ -136,7 +136,7 @@ const traceImagesToSvgs = async (separatedColorImages, colorPalletHex) => {
 	);
 };
 // Function to merge SVGs
-const mergeSvgs = (svgs, width, height) => {
+const mergeSvgs = (svgs) => {
 	let minX = Infinity;
 	let minY = Infinity;
 	let maxX = -Infinity;
@@ -183,6 +183,29 @@ const mergeSvgs = (svgs, width, height) => {
 	return `${mergedSvgHeader}\n${mergedSvgContent}\n${mergedSvgFooter}`;
 };
 
+const createBuffer = async (file) => Buffer.from(await file.arrayBuffer());
+const createImage = async (buffer) => Jimp.read(buffer);
+const createPallet = async (buffer) => Vibrant.from(buffer).quality(2).getPalette();
+const createColorPalette = async (palette) =>
+	Object.values(palette)
+		.filter((swatch) => swatch && swatch._rgb)
+		.map((swatch) => swatch._rgb);
+const mapColorPaletteToHex = async (palette) => palette.map(rgbToHex);
+const getBufferFromImage = async (image) => image.getBuffer('image/png');
+const createImagePath = async (processedBuffer) =>
+	`data:image/png;base64,${processedBuffer.toString('base64')}`;
+
+const createJimpImageFromBase64 = async (greyscaleImage) =>
+	await Jimp.read(Buffer.from(greyscaleImage.split(',')[1], 'base64'));
+
+const createSvgOutline = async (separatedColorSvgs) =>
+	separatedColorSvgs.map((svg) => {
+		const outlineSvg = svg
+			.replace(/fill="[^"]*"/g, 'fill="none"')
+			.replace(/stroke="[^"]*"/g, 'stroke="black" stroke-width="1"');
+		return outlineSvg;
+	});
+
 // Main POST handler
 export const POST = async ({ request }) => {
 	try {
@@ -193,71 +216,73 @@ export const POST = async ({ request }) => {
 			return json({ error: 'No image provided' }, { status: 400 });
 		}
 
-		const buffer = Buffer.from(await file.arrayBuffer());
-		const image = await Jimp.read(buffer);
+		// initialization
+		const buffer = await createBuffer(file);
+		const image = await createImage(buffer);
+		const palette = await createPallet(buffer);
 
-		const palette = await Vibrant.from(buffer).quality(2).getPalette();
-		if (!palette) {
-			return json({ error: 'Unable to extract color palette' }, { status: 500 });
-		}
+		// pallet definitions
+		const colorPaletteValues = await createColorPalette(palette);
+		const colorPallet = mapColorPaletteToHex(colorPaletteValues);
 
-		const colorPalette = Object.values(palette)
-			.filter((swatch) => swatch && swatch._rgb)
-			.map((swatch) => swatch._rgb);
+		// image-processing
+		const processedImage = await processImage(image, colorPaletteValues);
+		const processedBuffer = await getBufferFromImage(processedImage);
+		const colorImage = createImagePath(processedBuffer);
+		const greyscaleImage = await createGreyscaleImage(image);
 
-		if (colorPalette.length === 0) {
-			return json({ error: 'Unable to extract color palette' }, { status: 500 });
-		}
+		// greyscale pallet extraction
+		const greyscaleJimpImage = await createJimpImageFromBase64(greyscaleImage);
+		const greyscalePalette = extractGreyscalePalette(greyscaleJimpImage);
 
-		const colorPalletHex = colorPalette.map(rgbToHex);
-
-		const processedImage = await processImage(image, colorPalette);
-		const processedBuffer = await processedImage.getBuffer('image/png');
-		const processedImageBase64 = `data:image/png;base64,${processedBuffer.toString('base64')}`;
-
-		const separatedColorImages = await separateColors(image, colorPalette);
-		const separatedColorSvgs = await traceImagesToSvgs(separatedColorImages, colorPalletHex);
-		const mergedSvg = mergeSvgs(separatedColorSvgs, 500, 500);
-
-		const greyscaleImageBase64 = await createGreyscaleImage(image);
-		const greyscalePalette = extractGreyscalePalette(
-			await Jimp.read(Buffer.from(greyscaleImageBase64.split(',')[1], 'base64'))
-		);
+		// image seperation
+		const separatedColorImages = await separateColors(image, colorPaletteValues);
 		const separatedGreyscaleImages = await separateGreyscaleColors(image, greyscalePalette);
+
+		// svg seperation
+		const separatedColorSvgs = await traceImagesToSvgs(separatedColorImages, colorPallet);
 		const seperatedGreyscaleSvgs = await traceImagesToSvgs(
 			separatedGreyscaleImages,
 			greyscalePalette
 		);
-		const mergedGreyscaleSvg = mergeSvgs(seperatedGreyscaleSvgs, 500, 500);
+		const seperatedOutlinedSvgs = await createSvgOutline(separatedColorSvgs);
 
-		const outlineSvgs = separatedColorSvgs.map((svg) => {
-			const outlineSvg = svg
-				.replace(/fill="[^"]*"/g, 'fill="none"')
-				.replace(/stroke="[^"]*"/g, 'stroke="black" stroke-width="1"');
-			return outlineSvg;
-		});
+		// svg merging
+		const mergedColorSvg = mergeSvgs(separatedColorSvgs);
+		const mergedGreyscaleSvg = mergeSvgs(seperatedGreyscaleSvgs);
+		const mergedOutlinedSvg = mergeSvgs(seperatedOutlinedSvgs);
+		const mergedGreyscaleOutlinedSvg = mergeSvgs([
+			...seperatedGreyscaleSvgs,
+			...seperatedOutlinedSvgs
+		]);
+		const mergedColorOutlinedSvg = mergeSvgs([...separatedColorSvgs, ...seperatedOutlinedSvgs]);
 
-		const mergedOutlineSvg = mergeSvgs(outlineSvgs, 500, 500);
-		const mergedGreyscaleOutlinedSvg = mergeSvgs(
-			[...seperatedGreyscaleSvgs, ...outlineSvgs],
-			500,
-			500
-		);
 		return json({
-			processedImage: processedImageBase64,
-			colorPalette,
-			separatedColorImages,
-			separatedColorSvgs,
-			colorPalletHex,
-			mergedSvg,
-			greyscaleImage: greyscaleImageBase64,
-			greyscalePalette,
-			separatedGreyscaleImages,
-			seperatedGreyscaleSvgs,
-			mergedGreyscaleSvg,
-			outlineSvgs,
-			mergedOutlineSvg,
-			mergedGreyscaleOutlinedSvg
+			// const vectori = new Vectori(image, {...params});
+
+			// images
+			colorImage, // vectori.image()
+			greyscaleImage, // vectori.image({color: false})
+
+			// palettes
+			colorPallet, // vectori.palette()
+			greyscalePalette, // vectori.palette({color: false})
+
+			// seperated images
+			separatedColorImages, // vectori.components.image()
+			separatedGreyscaleImages, // vectori.components.image({color: false})
+
+			// seperated svgs
+			separatedColorSvgs, // vectori.components.svg()
+			seperatedGreyscaleSvgs, // vectori.components.svg({color: false})
+			seperatedOutlinedSvgs, // vectori.components.svg({fill: false})
+
+			// merged svgs
+			mergedColorSvg, // vectori.svg()
+			mergedColorOutlinedSvg, // vectori.svg({fill: true, outline: true})
+			mergedGreyscaleSvg, // vectori.svg({color: false})
+			mergedGreyscaleOutlinedSvg, // vectori.svg({color: false, outline: true})
+			mergedOutlinedSvg // vectori.svg({fill: false})
 		});
 	} catch (error) {
 		console.error('Error processing image:', error);

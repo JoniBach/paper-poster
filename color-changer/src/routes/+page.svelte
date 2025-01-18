@@ -36,19 +36,19 @@
       const data = await response.json();
       originalImage = URL.createObjectURL(imageFile); // Set original image
       processedImage = data.processedImage; // Set processed image (Base64)
-      extractedColors = data.colorPalletHex; // Set extracted colors
+      extractedColors = data.colorPallet; // Set extracted colors
 
       console.log(extractedColors);
       colorImages = data.separatedColorImages;
       colorSvgs = data.separatedColorSvgs;
-      svgImage = data.mergedSvg;
+      svgImage = data.mergedColorSvg;
       greyscaleImage = data.greyscaleImage; // Set greyscale image (Base64)
       greyscalePalette = data.greyscalePalette; // Set greyscale palette
       greyscaleImages = data.separatedGreyscaleImages; // Set separated greyscale images
       separatedGreyscaleSvgs = data.seperatedGreyscaleSvgs; // Set separated greyscale SVGs
       mergedGreyscaleSvg = data.mergedGreyscaleSvg; // Set merged greyscale SVG
-      outlineSvgs = data.outlineSvgs; // Set outline SVGs
-      mergedOutlineSvg = data.mergedOutlineSvg; // Set merged outline SVG
+      outlineSvgs = data.seperatedOutlinedSvgs; // Set outline SVGs
+      mergedOutlineSvg = data.mergedOutlinedSvg; // Set merged outline SVG
       mergedGreyscaleOutlinedSvg = data.mergedGreyscaleOutlinedSvg; // Set merged color line SVG
       console.log(data);
     } catch (error) {
