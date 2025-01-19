@@ -1,4 +1,4 @@
-import { processFile } from '$lib/Vectori';
+import { vectori } from '$lib/Vectori';
 import { json } from '@sveltejs/kit';
 
 // Main POST handler
@@ -10,31 +10,33 @@ export const POST = async ({ request }) => {
 		if (!file) {
 			return json({ error: 'No image provided' }, { status: 400 });
 		}
-		const vectori = await processFile(file);
+		const processed = await vectori(file);
 		return json({
 			// images
-			colorImage: vectori.image({ fill: 'color' }),
-			greyscaleImage: vectori.image({ fill: 'greyscale' }),
+			colorImage: processed.image({ fill: 'color' }),
+			greyscaleImage: processed.image({ fill: 'greyscale' }),
 
 			// palettes
-			colorPallet: vectori.palette({ fill: 'color' }),
-			greyscalePalette: vectori.palette({ fill: 'greyscale' }),
+			colorPallet: processed.palette.vibrant({ fill: 'color' }),
+			greyscalePalette: processed.palette.vibrant({ fill: 'greyscale' }),
+			allColorPallets: processed.palette.all({ fill: 'color' }),
+			allGreyscalePallets: processed.palette.all({ fill: 'greyscale' }),
 
 			// separated images
-			separatedColorImages: vectori.components.image({ fill: 'color' }),
-			separatedGreyscaleImages: vectori.components.image({ fill: 'greyscale' }),
+			separatedColorImages: processed.components.image({ fill: 'color' }),
+			separatedGreyscaleImages: processed.components.image({ fill: 'greyscale' }),
 
 			// separated svgs
-			separatedColorSvgs: vectori.components.svg({ fill: 'color' }),
-			seperatedGreyscaleSvgs: vectori.components.svg({ fill: 'greyscale' }),
-			seperatedOutlinedSvgs: vectori.components.svg({ fill: 'outline' }),
+			separatedColorSvgs: processed.components.svg({ fill: 'color' }),
+			seperatedGreyscaleSvgs: processed.components.svg({ fill: 'greyscale' }),
+			seperatedOutlinedSvgs: processed.components.svg({ fill: 'outline' }),
 
 			// merged svgs
-			mergedColorSvg: vectori.svg({ fill: 'color' }),
-			mergedColorOutlinedSvg: vectori.svg({ fill: 'color-outline' }),
-			mergedGreyscaleSvg: vectori.svg({ fill: 'greyscale' }),
-			mergedGreyscaleOutlinedSvg: vectori.svg({ fill: 'greyscale-outline' }),
-			mergedOutlinedSvg: vectori.svg({ fill: 'outline' })
+			mergedColorSvg: processed.svg({ fill: 'color' }),
+			mergedColorOutlinedSvg: processed.svg({ fill: 'color-outline' }),
+			mergedGreyscaleSvg: processed.svg({ fill: 'greyscale' }),
+			mergedGreyscaleOutlinedSvg: processed.svg({ fill: 'greyscale-outline' }),
+			mergedOutlinedSvg: processed.svg({ fill: 'outline' })
 		});
 	} catch (error) {
 		console.error('Error processing image:', error);

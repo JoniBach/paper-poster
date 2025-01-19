@@ -1,173 +1,198 @@
-import { json } from '@sveltejs/kit';
 import { Jimp } from 'jimp';
 import { Vibrant } from 'node-vibrant/node';
 import { trace } from 'potrace';
 
-// Utility functions
-const rgbToHex = (rgb) =>
-	'#' + rgb.map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
-const computeEuclideanDistance = (a, b) =>
-	Math.sqrt(a.reduce((acc, val, i) => acc + Math.pow(val - b[i], 2), 0));
-const findClosestColor = (color, palette) =>
-	palette.reduce((prev, curr) =>
-		computeEuclideanDistance(curr, color) < computeEuclideanDistance(prev, color) ? curr : prev
-	);
+/* ======================================
+   1) Fundamental Utilities
+   ====================================== */
 
-// Function to process the image and update its colors
-const processImage = (image, colorPalette) => {
-	image.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
-		const red = this.bitmap.data[idx];
-		const green = this.bitmap.data[idx + 1];
-		const blue = this.bitmap.data[idx + 2];
+/**
+ * Convert [R, G, B] -> #rrggbb hex string
+ */
+const rgbArrayToHex = (rgb) => {
+	return '#' + rgb.map((val) => Math.round(val).toString(16).padStart(2, '0')).join('');
+};
 
-		const closestColor = findClosestColor([red, green, blue], colorPalette);
+/**
+ * Calculate Euclidean distance between two [R, G, B] arrays.
+ */
+const calculateEuclideanDistance = (colorA, colorB) => {
+	return Math.sqrt(colorA.reduce((acc, val, idx) => acc + (val - colorB[idx]) ** 2, 0));
+};
 
-		this.bitmap.data[idx] = closestColor[0];
-		this.bitmap.data[idx + 1] = closestColor[1];
-		this.bitmap.data[idx + 2] = closestColor[2];
+/**
+ * Given a target [R,G,B], find the nearest color in `palette` (array of [R,G,B]).
+ */
+const findNearestColorInPalette = (targetColor, palette) => {
+	return palette.reduce((closest, current) => {
+		const distCurrent = calculateEuclideanDistance(current, targetColor);
+		const distClosest = calculateEuclideanDistance(closest, targetColor);
+		return distCurrent < distClosest ? current : closest;
 	});
-	return image;
 };
 
-// Function to create a greyscale image
-const createGreyscaleImage = async (image) => {
-	const greyscaleImage = image.clone().greyscale();
-	const greyscaleBuffer = await greyscaleImage.getBuffer('image/png');
-	return `data:image/png;base64,${greyscaleBuffer.toString('base64')}`;
+/**
+ * Convert #rrggbb -> [r, g, b].
+ */
+const hexToRgbArray = (hex) => {
+	const r = parseInt(hex.slice(1, 3), 16);
+	const g = parseInt(hex.slice(3, 5), 16);
+	const b = parseInt(hex.slice(5, 7), 16);
+	return [r, g, b];
 };
 
-// Function to extract greyscale palette
-const extractGreyscalePalette = (image) => {
-	const greyscalePalette = new Set();
-	image.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
-		const red = this.bitmap.data[idx];
-		const green = this.bitmap.data[idx + 1];
-		const blue = this.bitmap.data[idx + 2];
-		const grey = Math.round(0.3 * red + 0.59 * green + 0.11 * blue);
-		const greyHex = rgbToHex([grey, grey, grey]);
-		greyscalePalette.add(greyHex);
+/* ======================================
+   2) Core Image Transformations
+   ====================================== */
+
+/**
+ * Returns a new Jimp image where each pixel is replaced by the nearest color
+ * in `rgbPalette`.
+ */
+const applyPaletteToImage = (baseImage, rgbPalette) => {
+	const imgCopy = baseImage.clone();
+	imgCopy.scan(0, 0, imgCopy.bitmap.width, imgCopy.bitmap.height, function (x, y, idx) {
+		const r = this.bitmap.data[idx];
+		const g = this.bitmap.data[idx + 1];
+		const b = this.bitmap.data[idx + 2];
+		const [nr, ng, nb] = findNearestColorInPalette([r, g, b], rgbPalette);
+		this.bitmap.data[idx] = nr;
+		this.bitmap.data[idx + 1] = ng;
+		this.bitmap.data[idx + 2] = nb;
 	});
-	return Array.from(greyscalePalette);
+	return imgCopy;
 };
 
-// Function to separate colors in the image
-const separateColors = async (image, colorPalette) => {
+/**
+ * Convert a Jimp image to greyscale and return as a base64 PNG.
+ */
+const convertToGreyscaleBase64 = async (baseImage) => {
+	const greyscaleImg = baseImage.clone().greyscale();
+	const pngBuffer = await greyscaleImg.getBuffer('image/png');
+	return `data:image/png;base64,${pngBuffer.toString('base64')}`;
+};
+
+/* ======================================
+   3) Color & Grayscale Separation
+   ====================================== */
+
+/**
+ * For each color in `rgbPalette`, produce a base64 PNG containing only that color.
+ * All other pixels become white.
+ */
+const filterByPaletteColors = async (baseImage, rgbPalette) => {
 	return Promise.all(
-		colorPalette.map(async (color) => {
-			const newImage = image
-				.clone()
-				.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
-					const red = this.bitmap.data[idx];
-					const green = this.bitmap.data[idx + 1];
-					const blue = this.bitmap.data[idx + 2];
-
-					if (red !== color[0] || green !== color[1] || blue !== color[2]) {
-						this.bitmap.data[idx] = 255; // Set non-matching colors to white
-						this.bitmap.data[idx + 1] = 255;
-						this.bitmap.data[idx + 2] = 255;
-					}
-				});
-
-			const newProcessedBuffer = await newImage.getBuffer('image/png');
-			return `data:image/png;base64,${newProcessedBuffer.toString('base64')}`;
+		rgbPalette.map(async (colorArr) => {
+			const imgCopy = baseImage.clone();
+			imgCopy.scan(0, 0, baseImage.bitmap.width, baseImage.bitmap.height, function (x, y, idx) {
+				const r = this.bitmap.data[idx];
+				const g = this.bitmap.data[idx + 1];
+				const b = this.bitmap.data[idx + 2];
+				if (r !== colorArr[0] || g !== colorArr[1] || b !== colorArr[2]) {
+					this.bitmap.data[idx + 0] = 255;
+					this.bitmap.data[idx + 1] = 255;
+					this.bitmap.data[idx + 2] = 255;
+				}
+			});
+			const pngBuffer = await imgCopy.getBuffer('image/png');
+			return `data:image/png;base64,${pngBuffer.toString('base64')}`;
 		})
 	);
 };
 
 const TOLERANCE = 5;
 
-function greyHexToNumber(hexString) {
-	// Convert #RRGGBB to a single grayscale value (0–255).
-	const r = parseInt(hexString.slice(1, 3), 16);
-	const g = parseInt(hexString.slice(3, 5), 16);
-	const b = parseInt(hexString.slice(5, 7), 16);
-
-	// same grayscale formula you use for your image
-	return Math.round(0.3 * r + 0.59 * g + 0.11 * b);
-}
-
-const separateGreyscaleColors = async (image, greyscalePalette) => {
+/**
+ * For each grayscale hex, produce a base64 PNG where only that approximate
+ * grayscale is retained. All others become white.
+ */
+const filterByGreyscalePalette = async (baseImage, grayscalePalette) => {
 	return Promise.all(
-		greyscalePalette.map(async (greyHex) => {
-			const targetGrey = greyHexToNumber(greyHex);
-			const newImage = image
-				.clone()
-				.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
-					const red = this.bitmap.data[idx + 0];
-					const green = this.bitmap.data[idx + 1];
-					const blue = this.bitmap.data[idx + 2];
-					const grey = Math.round(0.3 * red + 0.59 * green + 0.11 * blue);
+		grayscalePalette.map(async (hex) => {
+			// Vibrant swatches might not be pure grey, so interpret them as grey
+			const [r, g, b] = hexToRgbArray(hex);
+			const approximateGrey = Math.round(0.3 * r + 0.59 * g + 0.11 * b);
 
-					// Check if pixel's grayscale is close to palette color.
-					if (Math.abs(grey - targetGrey) <= TOLERANCE) {
-						// Force the pixel to the *exact* grayscale.
-						// This ensures it's truly gray rather than color.
-						this.bitmap.data[idx + 0] = targetGrey;
-						this.bitmap.data[idx + 1] = targetGrey;
-						this.bitmap.data[idx + 2] = targetGrey;
-					} else {
-						// If it doesn't match within tolerance, set to white
-						this.bitmap.data[idx + 0] = 255;
-						this.bitmap.data[idx + 1] = 255;
-						this.bitmap.data[idx + 2] = 255;
-					}
-				});
+			const imgCopy = baseImage.clone();
+			imgCopy.scan(0, 0, imgCopy.bitmap.width, imgCopy.bitmap.height, function (x, y, idx) {
+				const cr = this.bitmap.data[idx];
+				const cg = this.bitmap.data[idx + 1];
+				const cb = this.bitmap.data[idx + 2];
+				const pixelGrey = Math.round(0.3 * cr + 0.59 * cg + 0.11 * cb);
 
-			const newBuffer = await newImage.getBuffer('image/png');
-			return `data:image/png;base64,${newBuffer.toString('base64')}`;
+				if (Math.abs(pixelGrey - approximateGrey) <= TOLERANCE) {
+					this.bitmap.data[idx + 0] = approximateGrey;
+					this.bitmap.data[idx + 1] = approximateGrey;
+					this.bitmap.data[idx + 2] = approximateGrey;
+				} else {
+					this.bitmap.data[idx + 0] = 255;
+					this.bitmap.data[idx + 1] = 255;
+					this.bitmap.data[idx + 2] = 255;
+				}
+			});
+			const pngBuffer = await imgCopy.getBuffer('image/png');
+			return `data:image/png;base64,${pngBuffer.toString('base64')}`;
 		})
 	);
 };
-// Function to trace images and get SVGs
-const traceImagesToSvgs = async (separatedColorImages, colorPallet) => {
+
+/* ======================================
+   4) SVG Generation and Merging
+   ====================================== */
+
+/**
+ * Convert an array of base64 PNG images into SVGs using `potrace.trace`.
+ * `hexPalette` is used for the fill color in each path.
+ */
+const traceBase64ImagesToSvgs = async (base64Images, hexPalette) => {
 	return Promise.all(
-		separatedColorImages.map((base64Image, i) => {
+		base64Images.map((base64Img, idx) => {
 			return new Promise((resolve, reject) => {
-				const imageBuffer = Buffer.from(base64Image.split(',')[1], 'base64');
-				trace(imageBuffer, { color: colorPallet[i] }, (error, svg) => {
-					if (error) {
-						reject(error);
-					} else {
-						resolve(svg);
-					}
+				const buffer = Buffer.from(base64Img.split(',')[1], 'base64');
+				trace(buffer, { color: hexPalette[idx] }, (error, svg) => {
+					if (error) return reject(error);
+					resolve(svg);
 				});
 			});
 		})
 	);
 };
-// Function to merge SVGs
-const mergeSvgs = (svgs) => {
+
+/**
+ * Merge multiple SVG strings into one by concatenating their contents.
+ */
+const combineSvgLayers = (svgList) => {
 	let minX = Infinity;
 	let minY = Infinity;
 	let maxX = -Infinity;
 	let maxY = -Infinity;
 
-	const mergedSvgContent = svgs
+	const combinedContent = svgList
 		.map((svg) => {
 			const viewBoxMatch = svg.match(/viewBox="([\d\s.-]+)"/);
 			const widthMatch = svg.match(/width="([\d.]+)"/);
 			const heightMatch = svg.match(/height="([\d.]+)"/);
 
-			let contentMinX = 0,
-				contentMinY = 0,
-				contentWidth = 0,
-				contentHeight = 0;
+			let localMinX = 0;
+			let localMinY = 0;
+			let localWidth = 0;
+			let localHeight = 0;
 
 			if (viewBoxMatch) {
-				const [x, y, width, height] = viewBoxMatch[1].split(' ').map(parseFloat);
-				contentMinX = x;
-				contentMinY = y;
-				contentWidth = width;
-				contentHeight = height;
+				const [x, y, w, h] = viewBoxMatch[1].split(' ').map(parseFloat);
+				localMinX = x;
+				localMinY = y;
+				localWidth = w;
+				localHeight = h;
 			} else if (widthMatch && heightMatch) {
-				contentWidth = parseFloat(widthMatch[1]);
-				contentHeight = parseFloat(heightMatch[1]);
+				localWidth = parseFloat(widthMatch[1]);
+				localHeight = parseFloat(heightMatch[1]);
 			}
 
-			minX = Math.min(minX, contentMinX);
-			minY = Math.min(minY, contentMinY);
-			maxX = Math.max(maxX, contentMinX + contentWidth);
-			maxY = Math.max(maxY, contentMinY + contentHeight);
+			minX = Math.min(minX, localMinX);
+			minY = Math.min(minY, localMinY);
+			maxX = Math.max(maxX, localMinX + localWidth);
+			maxY = Math.max(maxY, localMinY + localHeight);
 
 			const contentMatch = svg.match(/<svg[^>]*>([\s\S]*?)<\/svg>/);
 			return contentMatch ? contentMatch[1] : '';
@@ -176,104 +201,173 @@ const mergeSvgs = (svgs) => {
 
 	const finalWidth = maxX - minX;
 	const finalHeight = maxY - minY;
+	const header = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${finalWidth} ${finalHeight}" width="${finalWidth}" height="${finalHeight}">`;
+	const footer = '</svg>';
 
-	const mergedSvgHeader = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${finalWidth} ${finalHeight}" width="${finalWidth}" height="${finalHeight}">`;
-	const mergedSvgFooter = `</svg>`;
-
-	return `${mergedSvgHeader}\n${mergedSvgContent}\n${mergedSvgFooter}`;
+	return `${header}\n${combinedContent}\n${footer}`;
 };
 
-const createBuffer = async (file) => Buffer.from(await file.arrayBuffer());
-const createImage = async (buffer) => Jimp.read(buffer);
-const createPallet = async (buffer) => Vibrant.from(buffer).quality(2).getPalette();
-const createColorPalette = async (palette) =>
-	Object.values(palette)
+/**
+ * For each SVG string, remove any fill attributes and add a black stroke.
+ */
+const outlineSvgPaths = (svgList) => {
+	return svgList.map((svg) =>
+		svg
+			.replace(/fill="[^"]*"/g, 'fill="none"')
+			.replace(/stroke="[^"]*"/g, 'stroke="black" stroke-width="1"')
+	);
+};
+
+/* ======================================
+   5) Helper Functions
+   ====================================== */
+
+/**
+ * Convert a File object -> Buffer
+ */
+const fileToBuffer = async (file) => Buffer.from(await file.arrayBuffer());
+
+/**
+ * Convert Buffer -> Jimp image
+ */
+const bufferToJimpImage = async (buffer) => Jimp.read(buffer);
+
+/**
+ * Create a Vibrant palette from a Buffer; pass optional maxColorCount if needed
+ */
+const extractVibrantPalette = async (buffer, maxColorCount = 6) => {
+	return Vibrant.from(buffer).quality(2).maxColorCount(maxColorCount).getPalette();
+};
+
+/**
+ * Extract [R, G, B] arrays from Vibrant's palette object
+ */
+const extractRgbFromVibrantObject = (vibrantObject) => {
+	return Object.values(vibrantObject)
 		.filter((swatch) => swatch && swatch._rgb)
 		.map((swatch) => swatch._rgb);
-const mapColorPaletteToHex = async (palette) => palette.map(rgbToHex);
-const getBufferFromImage = async (image) => image.getBuffer('image/png');
-const createImagePath = async (processedBuffer) =>
-	`data:image/png;base64,${processedBuffer.toString('base64')}`;
+};
 
-const createJimpImageFromBase64 = async (greyscaleImage) =>
-	await Jimp.read(Buffer.from(greyscaleImage.split(',')[1], 'base64'));
+/**
+ * Convert an array of [R,G,B] arrays -> array of #rrggbb
+ */
+const convertRgbPaletteToHex = (rgbPalette) => rgbPalette.map(rgbArrayToHex);
 
-const createSvgOutline = async (separatedColorSvgs) =>
-	separatedColorSvgs.map((svg) => {
-		const outlineSvg = svg
-			.replace(/fill="[^"]*"/g, 'fill="none"')
-			.replace(/stroke="[^"]*"/g, 'stroke="black" stroke-width="1"');
-		return outlineSvg;
+/**
+ * Extract all unique hex colors from any Jimp image.
+ */
+const extractAllColorsInImage = (jimpImage) => {
+	const colorSet = new Set();
+	jimpImage.scan(0, 0, jimpImage.bitmap.width, jimpImage.bitmap.height, function (x, y, idx) {
+		const r = this.bitmap.data[idx + 0];
+		const g = this.bitmap.data[idx + 1];
+		const b = this.bitmap.data[idx + 2];
+		colorSet.add(rgbArrayToHex([r, g, b]));
 	});
+	return Array.from(colorSet);
+};
 
-export const processFile = async (file) => {
-	// initialization
-	const buffer = await createBuffer(file);
-	const image = await createImage(buffer);
-	const palette = await createPallet(buffer);
+/* ======================================
+   6) Main Vectori Function
+   ====================================== */
 
-	// pallet definitions
-	const colorPaletteValues = await createColorPalette(palette);
-	const colorPallet = mapColorPaletteToHex(colorPaletteValues);
+export const vectori = async (file) => {
+	// 1) Convert file -> buffer -> Jimp image
+	const fileBuffer = await fileToBuffer(file);
+	const originalJimpImage = await bufferToJimpImage(fileBuffer);
 
-	// image-processing
-	const processedImage = await processImage(image, colorPaletteValues);
-	const processedBuffer = await getBufferFromImage(processedImage);
-	const colorImage = createImagePath(processedBuffer);
-	const greyscaleImage = await createGreyscaleImage(image);
+	// 2) Vibrant color palette (6 color swatches) from the original
+	const vibrantColorObject = await extractVibrantPalette(fileBuffer, 6);
+	const colorRgbPalette = extractRgbFromVibrantObject(vibrantColorObject);
+	const colorHexPalette = convertRgbPaletteToHex(colorRgbPalette);
 
-	// greyscale pallet extraction
-	const greyscaleJimpImage = await createJimpImageFromBase64(greyscaleImage);
-	const greyscalePalette = extractGreyscalePalette(greyscaleJimpImage);
+	// 3) Apply the color palette to the original image
+	const paletteAppliedImage = applyPaletteToImage(originalJimpImage, colorRgbPalette);
+	const paletteImageBuffer = await paletteAppliedImage.getBuffer('image/png');
+	const paletteImageBase64 = `data:image/png;base64,${paletteImageBuffer.toString('base64')}`;
 
-	// image seperation
-	const separatedColorImages = await separateColors(image, colorPaletteValues);
-	const separatedGreyscaleImages = await separateGreyscaleColors(image, greyscalePalette);
+	// 4) Generate a greyscale version (base64) of the original
+	const greyscaleImageBase64 = await convertToGreyscaleBase64(originalJimpImage);
 
-	// svg seperation
-	const separatedColorSvgs = await traceImagesToSvgs(separatedColorImages, colorPallet);
-	const seperatedGreyscaleSvgs = await traceImagesToSvgs(
-		separatedGreyscaleImages,
-		greyscalePalette
+	// 5) Vibrant grayscale palette (6 swatches)
+	const greyscaleClone = originalJimpImage.clone().greyscale();
+	const grayscaleBuffer = await greyscaleClone.getBuffer('image/png');
+	const vibrantGrayscaleObject = await extractVibrantPalette(grayscaleBuffer, 6);
+	const grayscaleRgbPalette = extractRgbFromVibrantObject(vibrantGrayscaleObject);
+	const grayscaleHexPalette = convertRgbPaletteToHex(grayscaleRgbPalette);
+
+	// 6) Separated images (color & grayscale)
+	const separatedColorImages = await filterByPaletteColors(originalJimpImage, colorRgbPalette);
+	const separatedGrayscaleImages = await filterByGreyscalePalette(
+		originalJimpImage,
+		grayscaleHexPalette
 	);
-	const seperatedOutlinedSvgs = await createSvgOutline(separatedColorSvgs);
 
-	// svg merging
-	const mergedColorSvg = mergeSvgs(separatedColorSvgs);
-	const mergedGreyscaleSvg = mergeSvgs(seperatedGreyscaleSvgs);
-	const mergedOutlinedSvg = mergeSvgs(seperatedOutlinedSvgs);
-	const mergedGreyscaleOutlinedSvg = mergeSvgs([
-		...seperatedGreyscaleSvgs,
-		...seperatedOutlinedSvgs
-	]);
-	const mergedColorOutlinedSvg = mergeSvgs([...separatedColorSvgs, ...seperatedOutlinedSvgs]);
+	// 7) Trace to SVG
+	const colorSvgs = await traceBase64ImagesToSvgs(separatedColorImages, colorHexPalette);
+	const grayscaleSvgs = await traceBase64ImagesToSvgs(
+		separatedGrayscaleImages,
+		grayscaleHexPalette
+	);
 
+	// 8) Create outlined color SVGs
+	const outlinedColorSvgs = outlineSvgPaths(colorSvgs);
+
+	// 9) Merge as needed
+	const mergedColorSvg = combineSvgLayers(colorSvgs);
+	const mergedGrayscaleSvg = combineSvgLayers(grayscaleSvgs);
+	const mergedOutlinedSvg = combineSvgLayers(outlinedColorSvgs);
+	const mergedColorOutlinedSvg = combineSvgLayers([...colorSvgs, ...outlinedColorSvgs]);
+	const mergedGrayscaleOutlinedSvg = combineSvgLayers([...grayscaleSvgs, ...outlinedColorSvgs]);
+
+	// 10) Get ALL unique colors from the original and from the greyscale version
+	//     So we can do .all({ fill: 'color' }) or .all({ fill: 'greyscale' }).
+	const allColorHexList = extractAllColorsInImage(originalJimpImage);
+	const allGreyscaleHexList = extractAllColorsInImage(greyscaleClone);
+
+	// ============================
+	// Return the final structured object
+	// ============================
 	const res = {
 		image: ({ fill = 'color' }) => {
-			if (fill === 'greyscale') return greyscaleImage;
-			if (fill === 'color') return colorImage;
+			if (fill === 'color') return paletteImageBase64;
+			if (fill === 'greyscale') return greyscaleImageBase64;
 		},
-		palette: ({ fill = 'color' }) => {
-			if (fill === 'greyscale') return greyscalePalette;
-			if (fill === 'color') return colorPallet;
+		palette: {
+			/**
+			 * `vibrant({ fill })` returns our ~6-swatch palette from Vibrant,
+			 * either color-based or grayscale-based.
+			 */
+			vibrant: ({ fill = 'color' }) => {
+				if (fill === 'color') return colorHexPalette;
+				if (fill === 'greyscale') return grayscaleHexPalette;
+			},
+			/**
+			 * `all({ fill })` returns ALL colors discovered in the entire image
+			 * or the entire greyscale version.
+			 */
+			all: ({ fill = 'color' }) => {
+				if (fill === 'color') return allColorHexList;
+				if (fill === 'greyscale') return allGreyscaleHexList;
+			}
 		},
 		components: {
 			image: ({ fill = 'color' }) => {
 				if (fill === 'color') return separatedColorImages;
-				if (fill === 'greyscale') return separatedGreyscaleImages;
+				if (fill === 'greyscale') return separatedGrayscaleImages;
 			},
 			svg: ({ fill = 'color' }) => {
-				if (fill === 'color') return separatedColorSvgs;
-				if (fill === 'greyscale') return seperatedGreyscaleSvgs;
-				if (fill === 'outline') return seperatedOutlinedSvgs;
+				if (fill === 'color') return colorSvgs;
+				if (fill === 'greyscale') return grayscaleSvgs;
+				if (fill === 'outline') return outlinedColorSvgs;
 			}
 		},
 		svg: ({ fill = 'color' }) => {
 			if (fill === 'color') return mergedColorSvg;
-			if (fill === 'greyscale') return mergedGreyscaleSvg;
+			if (fill === 'greyscale') return mergedGrayscaleSvg;
 			if (fill === 'outline') return mergedOutlinedSvg;
 			if (fill === 'color-outline') return mergedColorOutlinedSvg;
-			if (fill === 'greyscale-outline') return mergedGreyscaleOutlinedSvg;
+			if (fill === 'greyscale-outline') return mergedGrayscaleOutlinedSvg;
 		}
 	};
 
