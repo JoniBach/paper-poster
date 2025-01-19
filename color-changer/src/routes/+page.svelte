@@ -1,6 +1,10 @@
 <script>
+	// import { vectori } from "$lib/Vectori";
   import { onMount } from "svelte";
+// import { vectori } from '$lib/Vectori';
+import { vectori } from 'vectori';
 
+  // import { vectori } from 'vectori';
   let originalImage = null; // Original image URL
   let processedImage = null; // Processed image URL
   let extractedColors = []; // Extracted color palette
@@ -16,11 +20,49 @@
   let outlineSvgs = []; // Array of outline SVGs
   let mergedOutlineSvg = null; // Merged outline SVG
   let mergedGreyscaleOutlinedSvg = null; // Merged color line SVG
+
+
+  const handleImage = async (file) => {
+		const processed = await vectori(file);
+
+    return ({
+			// images
+			colorImage: processed.image({ fill: 'color' }),
+			greyscaleImage: processed.image({ fill: 'greyscale' }),
+
+			// palettes
+			colorPallet: processed.palette.popular({ fill: 'color' }),
+			greyscalePalette: processed.palette.popular({ fill: 'greyscale' }),
+			allColorPallets: processed.palette.all({ fill: 'color' }),
+			allGreyscalePallets: processed.palette.all({ fill: 'greyscale' }),
+
+			// separated images
+			separatedColorImages: processed.components.image({ fill: 'color' }),
+			separatedGreyscaleImages: processed.components.image({ fill: 'greyscale' }),
+
+			// separated svgs
+			separatedColorSvgs: processed.components.svg({ fill: 'color' }),
+			seperatedGreyscaleSvgs: processed.components.svg({ fill: 'greyscale' }),
+			seperatedOutlinedSvgs: processed.components.svg({ fill: 'outline' }),
+
+			// merged svgs
+			mergedColorSvg: processed.svg({ fill: 'color' }),
+			mergedColorOutlinedSvg: processed.svg({ fill: 'color-outline' }),
+			mergedGreyscaleSvg: processed.svg({ fill: 'greyscale' }),
+			mergedGreyscaleOutlinedSvg: processed.svg({ fill: 'greyscale-outline' }),
+			mergedOutlinedSvg: processed.svg({ fill: 'outline' })
+		});
+  
+  }
   const processImage = async () => {
     if (!imageFile) return;
 
     const formData = new FormData();
     formData.append("image", imageFile);
+
+
+    const res = await handleImage(imageFile)
+    console.log(res)
 
     try {
       const response = await fetch("/api/process", {

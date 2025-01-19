@@ -1,5 +1,6 @@
-import { vectori } from '$lib/Vectori';
+// import { vectori } from '$lib/Vectori';
 import { json } from '@sveltejs/kit';
+import { vectori } from 'vectori';
 
 // Main POST handler
 export const POST = async ({ request }) => {
@@ -17,12 +18,10 @@ export const POST = async ({ request }) => {
 			greyscaleImage: processed.image({ fill: 'greyscale' }),
 
 			// palettes
-			colorPallet: processed.palette.vibrant({ fill: 'color' }),
-			greyscalePalette: processed.palette.vibrant({ fill: 'greyscale' }),
+			colorPallet: processed.palette.popular({ fill: 'color' }),
+			greyscalePalette: processed.palette.popular({ fill: 'greyscale' }),
 			allColorPallets: processed.palette.all({ fill: 'color' }),
 			allGreyscalePallets: processed.palette.all({ fill: 'greyscale' }),
-			// colorPallet: processed.palette({ fill: 'color' }),
-			// greyscalePalette: processed.palette({ fill: 'greyscale' }),
 
 			// separated images
 			separatedColorImages: processed.components.image({ fill: 'color' }),

@@ -32,6 +32,8 @@
 	"dependencies": {
 		"jimp": "^1.6.0",
 		"node-vibrant": "^4.0.0",
-		"potrace": "^2.1.8"
+		"potrace": "^2.1.8",
+		"quantize": "^1.0.2",
+		"vectori": "^0.0.13"
 	}
 }
