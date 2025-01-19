@@ -21,6 +21,8 @@ export const POST = async ({ request }) => {
 			greyscalePalette: processed.palette.vibrant({ fill: 'greyscale' }),
 			allColorPallets: processed.palette.all({ fill: 'color' }),
 			allGreyscalePallets: processed.palette.all({ fill: 'greyscale' }),
+			// colorPallet: processed.palette({ fill: 'color' }),
+			// greyscalePalette: processed.palette({ fill: 'greyscale' }),
 
 			// separated images
 			separatedColorImages: processed.components.image({ fill: 'color' }),
